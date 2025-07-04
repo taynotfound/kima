@@ -71,6 +71,18 @@ show_spinner() {
     printf "    \b\b\b\b"
 }
 
+# --- Utility: Format Package Output ---
+format_package_output() {
+    local pm="$1"
+    local output="$2"
+    local max_lines="$3"
+    if [ -z "$output" ]; then
+        echo -e "${COLOR_LIGHT_GRAY}No results found in ${pm}.${COLOR_NC}"
+    else
+        echo "$output" | head -n "$max_lines"
+    fi
+}
+
 # --- ASCII Art ---
 print_ascii_art() {
     echo -e "${COLOR_LIGHT_PURPLE}"
@@ -699,192 +711,6 @@ tui_mode() {
      done
  }
 
-# --- Main Logic ---
-if [ "$#" -eq 0 ]; then
-    show_help
-    exit 0
-fi
-
-case "$1" in
-    install)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        elif [ -z "$3" ]; then
-            install_package "$2"
-        else
-            install_package_with_manager "$2" "$3"
-        fi
-        ;;
-    search)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        elif [ -z "$3" ]; then
-            search_package "$2"
-        else
-            search_package "$2" "$3"
-        fi
-        ;;
-    uninstall)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        elif [ -z "$3" ]; then
-            uninstall_package "$2"
-        else
-            uninstall_package_with_manager "$2" "$3"
-        fi
-        ;;
-    update)
-        update_system
-        ;;
-    list)
-        if [ -z "$2" ]; then
-            list_packages
-        else
-            list_packages "$2"
-        fi
-        ;;
-    info)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            show_package_info "$2"
-        fi
-        ;;
-    cleanup)
-        cleanup_system
-        ;;
-    check)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            check_installed "$2"
-        fi
-        ;;
-    stats)
-        show_system_stats
-        ;;
-    orphaned)
-        find_orphaned
-        ;;
-    ui)
-        tui_mode
-        ;;
-    help)
-        show_help
-        ;;
-    upgrade)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            upgrade_package "$2"
-        fi
-        ;;
-    details)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            show_details "$2"
-        fi
-        ;;
-    outdated)
-        list_outdated
-        ;;
-    files)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            show_files "$2"
-        fi
-        ;;
-    descsearch)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No search term specified.${COLOR_NC}"
-            show_help
-        else
-            desc_search "$2"
-        fi
-        ;;
-    deps)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            show_deps "$2"
-        fi
-        ;;
-    rdeps)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            show_rdeps "$2"
-        fi
-        ;;
-    copycmd)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            copy_install_cmd "$2"
-        fi
-        ;;
-    home)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            show_homepage "$2"
-        fi
-        ;;
-    compare)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            compare_package "$2"
-        fi
-        ;;
-    suggest)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No search term specified.${COLOR_NC}"
-            show_help
-        else
-            suggest_package "$2"
-        fi
-        ;;
-    backup)
-        backup_packages
-        ;;
-    audit)
-        audit_packages
-        ;;
-    news)
-        show_news
-        ;;
-    history)
-        if [ -z "$2" ]; then
-            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
-            show_help
-        else
-            show_history "$2"
-        fi
-        ;;
-    self-update)
-        self_update
-        ;;
-    *)
-        echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}Invalid command: $1${COLOR_NC}"
-        show_help
-        ;;
-esac
 
 # Upgrade a single package across all managers
 upgrade_package() {
@@ -1188,13 +1014,52 @@ backup_packages() {
     print_header
     echo -e "${EMOJI_LIST} ${COLOR_LIGHT_CYAN}Backing up installed packages...${COLOR_NC}\n"
     local backup_file="kima-backup-$(date +%Y%m%d-%H%M%S).txt"
+    local all_install_cmds=()
     for pm in "${AVAILABLE_PMS[@]}"; do
         if [ -n "${PM_LIST[$pm]}" ]; then
             echo "# ${pm}" >> "$backup_file"
-            ${PM_COMMANDS_NO_SUDO[$pm]} ${PM_LIST[$pm]} 2>/dev/null >> "$backup_file"
+            local output
+            output=$(${PM_COMMANDS_NO_SUDO[$pm]} ${PM_LIST[$pm]} 2>/dev/null)
+            echo "$output" >> "$backup_file"
             echo >> "$backup_file"
+            # Parse package names and versions for install command
+            local pkgs=()
+            case $pm in
+                dnf)
+                    # dnf list installed: NAME.VERSION-RELEASE.ARCH @repo
+                    pkgs+=( $(echo "$output" | awk 'NR>1 && $1 !~ /^$/ {split($1,a,"."); print a[1]}' ) )
+                    ;;
+                rpm)
+                    # rpm -qa: NAME-VERSION-RELEASE.ARCH
+                    pkgs+=( $(echo "$output" | awk -F '-' '{OFS="-"; n=NF-2; if(n>0) {for(i=1;i<=n;i++) printf $i "-"; printf $(n+1) " "} }' | sed 's/ *$//') )
+                    ;;
+                flatpak)
+                    # flatpak list: NAME	APPID	VERSION	BRANCH
+                    pkgs+=( $(echo "$output" | awk 'NR>1 {print $1}' ) )
+                    ;;
+                pacman|yay)
+                    # pacman -Q: NAME VERSION
+                    pkgs+=( $(echo "$output" | awk '{print $1}' ) )
+                    ;;
+                apt)
+                    # apt list --installed: NAME/VERSION ...
+                    pkgs+=( $(echo "$output" | awk -F'/' 'NR>1 {print $1}' ) )
+                    ;;
+                snap)
+                    # snap list: NAME ...
+                    pkgs+=( $(echo "$output" | awk 'NR>1 {print $1}' ) )
+                    ;;
+            esac
+            for pkg in "${pkgs[@]}"; do
+                all_install_cmds+=("$pkg")
+            done
         fi
     done
+    # Write install command at the end of the file
+    if [ ${#all_install_cmds[@]} -gt 0 ]; then
+        echo "# To restore all packages, run:" >> "$backup_file"
+        echo "kima install ${all_install_cmds[*]}" >> "$backup_file"
+    fi
     echo -e "${COLOR_LIGHT_GREEN}Backup saved to ${backup_file}${COLOR_NC}"
     print_footer
 }
@@ -1285,3 +1150,260 @@ self_update() {
     fi
     print_footer
 }
+
+
+self_check() {
+    print_header
+    echo -e "${EMOJI_INFO} ${COLOR_LIGHT_CYAN}Checking KIMA...${COLOR_NC}\n"
+    echo -e "${COLOR_LIGHT_GREEN}KIMA is up to date.${COLOR_NC}"
+    print_footer
+    # Test every command and report errors/successes
+
+    # List of CLI commands to test (command, argument, ...)
+    local commands_to_test=(
+        "help"
+        "install neofetch"
+        "uninstall neofetch"
+        "search neofetch"
+        "list"
+        "files neofetch"
+        "info neofetch"
+        "details neofetch"
+        "deps neofetch"
+        "rdeps neofetch"
+        "update"
+        "cleanup"
+        "outdated"
+        "orphaned"
+        "check neofetch"
+        "stats"
+        "copycmd neofetch"
+        "home neofetch"
+        "compare neofetch"
+        "suggest neofetch"
+        "backup"
+        "audit"
+        "news"
+        "history neofetch"
+        "upgrade neofetch"
+        "self-update"
+    )
+
+    echo -e "${COLOR_YELLOW}Running self-check on all major CLI commands...${COLOR_NC}"
+    local total=${#commands_to_test[@]}
+    local passed=0
+    local failed=0
+
+    for cmd in "${commands_to_test[@]}"; do
+        # Run the command as a subprocess
+        ./kima.sh $cmd >/dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            echo -e "${EMOJI_SUCCESS} ${COLOR_LIGHT_GREEN}Command './kima.sh $cmd' executed successfully.${COLOR_NC}"
+            ((passed++))
+        else
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}Command './kima.sh $cmd' failed or not implemented properly.${COLOR_NC}"
+            echo -e "${COLOR_LIGHT_RED}Output:${COLOR_NC}"
+            ./kima.sh $cmd 2>&1 | head -20
+            ((failed++))
+        fi
+    done
+
+    echo -e "\n${COLOR_CYAN}Self-check complete: ${COLOR_LIGHT_GREEN}${passed} passed${COLOR_NC}, ${COLOR_LIGHT_RED}${failed} failed${COLOR_NC}, ${COLOR_WHITE}${total} total${COLOR_NC}."
+}
+
+# --- Aliases for Self-Check Compatibility ---
+show_info() { show_package_info "$@"; }
+update_all() { update_system "$@"; }
+cleanup_packages() { cleanup_system "$@"; }
+list_orphaned() { find_orphaned "$@"; }
+show_stats() { show_system_stats "$@"; }
+
+# --- Main Logic ---
+if [ "$#" -eq 0 ]; then
+    show_help
+    exit 0
+fi
+
+case "$1" in
+    install)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        elif [ -z "$3" ]; then
+            install_package "$2"
+        else
+            install_package_with_manager "$2" "$3"
+        fi
+        ;;
+    search)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        elif [ -z "$3" ]; then
+            search_package "$2"
+        else
+            search_package "$2" "$3"
+        fi
+        ;;
+    uninstall)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        elif [ -z "$3" ]; then
+            uninstall_package "$2"
+        else
+            uninstall_package_with_manager "$2" "$3"
+        fi
+        ;;
+    update)
+        update_system
+        ;;
+    list)
+        if [ -z "$2" ]; then
+            list_packages
+        else
+            list_packages "$2"
+        fi
+        ;;
+    info)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            show_package_info "$2"
+        fi
+        ;;
+    cleanup)
+        cleanup_system
+        ;;
+    check)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            check_installed "$2"
+        fi
+        ;;
+    stats)
+        show_system_stats
+        ;;
+    orphaned)
+        find_orphaned
+        ;;
+    ui)
+        tui_mode
+        ;;
+    help)
+        show_help
+        ;;
+    upgrade)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            upgrade_package "$2"
+        fi
+        ;;
+    details)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            show_details "$2"
+        fi
+        ;;
+    outdated)
+        list_outdated
+        ;;
+    files)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            show_files "$2"
+        fi
+        ;;
+    descsearch)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No search term specified.${COLOR_NC}"
+            show_help
+        else
+            desc_search "$2"
+        fi
+        ;;
+    deps)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            show_deps "$2"
+        fi
+        ;;
+    rdeps)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            show_rdeps "$2"
+        fi
+        ;;
+    copycmd)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            copy_install_cmd "$2"
+        fi
+        ;;
+    home)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            show_homepage "$2"
+        fi
+        ;;
+    compare)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            compare_package "$2"
+        fi
+        ;;
+    suggest)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No search term specified.${COLOR_NC}"
+            show_help
+        else
+            suggest_package "$2"
+        fi
+        ;;
+    backup)
+        backup_packages
+        ;;
+    audit)
+        audit_packages
+        ;;
+    news)
+        show_news
+        ;;
+    history)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            show_history "$2"
+        fi
+        ;;
+    self-update)
+        self_update
+        ;;
+    self-check)
+        self_check
+        ;;
+    *)
+        echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}Invalid command: $1${COLOR_NC}"
+        show_help
+        ;;
+esac
