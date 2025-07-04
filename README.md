@@ -12,7 +12,13 @@ KIMA is a beautiful, interactive, and unified package manager script for Linux. 
 - Show package homepage/URL
 - System stats and cleanup
 - Interactive TUI mode
-- **NEW:** Compare a package's availability and version across all managers
+- **Compare** a package's availability and version across all managers
+- **Suggest** similar package names if a search fails
+- **Backup** all installed packages to a file
+- **Audit** installed packages for security issues (where supported)
+- **News**: Show latest Linux/package manager news
+- **History**: Show install/update/remove history for a package (where supported)
+- **Self-update**: Update KIMA itself from GitHub
 
 ## Commands
 - `install <package>`: Install a package (tries all managers)
@@ -36,7 +42,13 @@ KIMA is a beautiful, interactive, and unified package manager script for Linux. 
 - `home <package>`: Show package homepage/URL
 - `ui`: Start interactive TUI mode
 - `help`: Show help menu
-- `compare <package>`: **Compare package availability and version across all managers**
+- `compare <package>`: Compare package availability and version across all managers
+- `suggest <term>`: Suggest similar package names
+- `backup`: Backup installed packages to a file
+- `audit`: Audit installed packages for security issues
+- `news`: Show latest Linux/package manager news
+- `history <package>`: Show install/update/remove history for a package
+- `self-update`: Update KIMA itself from GitHub
 
 ## Installation
 1. Download `kima.sh` to a directory of your choice.
@@ -58,6 +70,8 @@ KIMA is a beautiful, interactive, and unified package manager script for Linux. 
 - At least one supported package manager (apt, dnf, pacman, yay, rpm, snap, flatpak)
 - `column` utility (usually in `util-linux`)
 - Optional: `xclip` or `pbcopy` for clipboard features
+- Optional: `curl` for news and self-update
+- Optional: `debsecan` for security audit on Debian/Ubuntu
 
 ## Usage Examples
 - Search for a package:
@@ -67,6 +81,30 @@ KIMA is a beautiful, interactive, and unified package manager script for Linux. 
 - Compare a package across all managers:
   ```bash
   kima compare neofetch
+  ```
+- Suggest similar package names:
+  ```bash
+  kima suggest neoftch
+  ```
+- Backup all installed packages:
+  ```bash
+  kima backup
+  ```
+- Audit installed packages for security issues:
+  ```bash
+  kima audit
+  ```
+- Show latest Linux/package manager news:
+  ```bash
+  kima news
+  ```
+- Show history for a package:
+  ```bash
+  kima history neofetch
+  ```
+- Update KIMA itself:
+  ```bash
+  kima self-update
   ```
 - Start the interactive TUI:
   ```bash

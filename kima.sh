@@ -356,6 +356,12 @@ show_help() {
     echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}ui${COLOR_NC}                           Start interactive TUI mode"
     echo -e "  ${EMOJI_HELP} ${COLOR_GREEN}help${COLOR_NC}                        Show this help menu"
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}compare <package>${COLOR_NC}            Compare package availability and version across all managers"
+    echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}suggest <term>${COLOR_NC}                Suggest similar package names"
+    echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}backup${COLOR_NC}                        Backup installed packages"
+    echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}audit${COLOR_NC}                         Audit installed packages"
+    echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}news${COLOR_NC}                            Show Linux/package manager news"
+    echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}history <package>${COLOR_NC}              Show package history"
+    echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}self-update${COLOR_NC}                     Self-update KIMA"
     echo ""
     print_divider
     echo ""
@@ -846,6 +852,34 @@ case "$1" in
             compare_package "$2"
         fi
         ;;
+    suggest)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No search term specified.${COLOR_NC}"
+            show_help
+        else
+            suggest_package "$2"
+        fi
+        ;;
+    backup)
+        backup_packages
+        ;;
+    audit)
+        audit_packages
+        ;;
+    news)
+        show_news
+        ;;
+    history)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No package specified.${COLOR_NC}"
+            show_help
+        else
+            show_history "$2"
+        fi
+        ;;
+    self-update)
+        self_update
+        ;;
     *)
         echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}Invalid command: $1${COLOR_NC}"
         show_help
@@ -1120,5 +1154,134 @@ compare_package() {
         rows+="${pm}\t${version}\n"
     done
     print_table "${COLOR_LIGHT_BLUE}Manager\tVersion${COLOR_NC}" "$rows" ""
+    print_footer
+}
+
+# --- Suggest similar package names ---
+suggest_package() {
+    _silent
+    local term=$1
+    print_header
+    echo -e "${EMOJI_SEARCH} ${COLOR_LIGHT_CYAN}Suggestions for '${COLOR_WHITE}${term}${COLOR_LIGHT_CYAN}':${COLOR_NC}\n"
+    local found=0
+    for pm in "${AVAILABLE_PMS[@]}"; do
+        if [ -n "${PM_SEARCH[$pm]}" ]; then
+            local output
+            output=$(${PM_COMMANDS_NO_SUDO[$pm]} ${PM_SEARCH[$pm]} ${term:0:3} 2>/dev/null | grep -i "$term" | head -10)
+            if [ -n "$output" ]; then
+                found=1
+                echo -e "${COLOR_YELLOW}From ${pm}:${COLOR_NC}"
+                echo "$output"
+                echo
+            fi
+        fi
+    done
+    if [ $found -eq 0 ]; then
+        echo -e "${COLOR_LIGHT_RED}No suggestions found.${COLOR_NC}"
+    fi
+    print_footer
+}
+
+# --- Backup installed packages ---
+backup_packages() {
+    _silent
+    print_header
+    echo -e "${EMOJI_LIST} ${COLOR_LIGHT_CYAN}Backing up installed packages...${COLOR_NC}\n"
+    local backup_file="kima-backup-$(date +%Y%m%d-%H%M%S).txt"
+    for pm in "${AVAILABLE_PMS[@]}"; do
+        if [ -n "${PM_LIST[$pm]}" ]; then
+            echo "# ${pm}" >> "$backup_file"
+            ${PM_COMMANDS_NO_SUDO[$pm]} ${PM_LIST[$pm]} 2>/dev/null >> "$backup_file"
+            echo >> "$backup_file"
+        fi
+    done
+    echo -e "${COLOR_LIGHT_GREEN}Backup saved to ${backup_file}${COLOR_NC}"
+    print_footer
+}
+
+# --- Audit installed packages (basic, using 'debsecan' or 'dnf updateinfo') ---
+audit_packages() {
+    _silent
+    print_header
+    echo -e "${EMOJI_WARN} ${COLOR_LIGHT_CYAN}Auditing installed packages for security issues...${COLOR_NC}\n"
+    local found=0
+    for pm in "${AVAILABLE_PMS[@]}"; do
+        case $pm in
+            apt)
+                if command -v debsecan &>/dev/null; then
+                    debsecan | head -20
+                    found=1
+                fi
+                ;;
+            dnf)
+                dnf updateinfo list security all 2>/dev/null | head -20
+                found=1
+                ;;
+            pacman|yay)
+                echo -e "${COLOR_LIGHT_GRAY}No built-in audit for ${pm}.${COLOR_NC}"
+                ;;
+            *)
+                echo -e "${COLOR_LIGHT_GRAY}No audit available for ${pm}.${COLOR_NC}"
+                ;;
+        esac
+    done
+    if [ $found -eq 0 ]; then
+        echo -e "${COLOR_LIGHT_RED}No security audit tools found for your managers.${COLOR_NC}"
+    fi
+    print_footer
+}
+
+# --- Show Linux/package manager news (RSS via curl) ---
+show_news() {
+    print_header
+    echo -e "${EMOJI_INFO} ${COLOR_LIGHT_CYAN}Latest Linux/Package Manager News:${COLOR_NC}\n"
+    if command -v curl &>/dev/null; then
+        curl -s https://www.phoronix.com/rss.php | grep -oP '(?<=<title>)[^<]+' | head -10 | tail -n +2
+    else
+        echo -e "${COLOR_LIGHT_RED}curl is required for news fetching.${COLOR_NC}"
+    fi
+    print_footer
+}
+
+# --- Show package history (if supported) ---
+show_history() {
+    _silent
+    local package=$1
+    print_header
+    echo -e "${EMOJI_INFO} ${COLOR_LIGHT_CYAN}History for '${COLOR_WHITE}${package}${COLOR_LIGHT_CYAN}':${COLOR_NC}\n"
+    local found=0
+    for pm in "${AVAILABLE_PMS[@]}"; do
+        case $pm in
+            apt)
+                zgrep -i "$package" /var/log/apt/history.log* 2>/dev/null | tail -10 && found=1
+                ;;
+            dnf)
+                sudo dnf history userinstalled | grep -i "$package" | tail -10 && found=1
+                ;;
+            pacman|yay)
+                grep -i "$package" /var/log/pacman.log 2>/dev/null | tail -10 && found=1
+                ;;
+            *)
+                echo -e "${COLOR_LIGHT_GRAY}No history available for ${pm}.${COLOR_NC}"
+                ;;
+        esac
+    done
+    if [ $found -eq 0 ]; then
+        echo -e "${COLOR_LIGHT_RED}No history found for '${package}'.${COLOR_NC}"
+    fi
+    print_footer
+}
+
+# --- Self-update from GitHub ---
+self_update() {
+    print_header
+    echo -e "${EMOJI_UPDATE} ${COLOR_LIGHT_CYAN}Updating KIMA from GitHub...${COLOR_NC}\n"
+    if command -v curl &>/dev/null; then
+        curl -fsSL https://raw.githubusercontent.com/taynotfound/kima/main/kima.sh -o "$0" && \
+        chmod +x "$0" && \
+        echo -e "${COLOR_LIGHT_GREEN}KIMA updated successfully! Restart the script to use the new version.${COLOR_NC}"
+    else
+        echo -e "${COLOR_LIGHT_RED}curl is required for self-update.${COLOR_NC}"
+    fi
     print_footer
 }
