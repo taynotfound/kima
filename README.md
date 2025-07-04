@@ -112,4 +112,4 @@ KIMA is a beautiful, interactive, and unified package manager script for Linux. 
   ```
 
 ## License
-[Your License Here] 
+MIT
