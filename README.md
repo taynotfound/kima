@@ -22,6 +22,7 @@ KIMA is a beautiful, interactive, and unified package manager script for Linux. 
 
 ## Commands
 - `install <package>`: Install a package (tries all managers)
+- `multiple <packages...>`: Install multiple packages at once
 - `upgrade <package>`: Upgrade a package everywhere
 - `uninstall <package>`: Uninstall a package (tries all managers)
 - `search <package>`: Search for a package across all managers
@@ -77,6 +78,10 @@ KIMA is a beautiful, interactive, and unified package manager script for Linux. 
 - Search for a package:
   ```bash
   kima search neofetch
+  ```
+- Install multiple packages at once:
+  ```bash
+  kima multiple neofetch htop git
   ```
 - Compare a package across all managers:
   ```bash
