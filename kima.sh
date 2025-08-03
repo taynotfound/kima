@@ -347,6 +347,7 @@ show_help() {
     echo -e "${COLOR_LIGHT_CYAN}🚀 ${COLOR_WHITE}Available Commands:${COLOR_NC}"
     echo ""
     echo -e "  ${EMOJI_INSTALL} ${COLOR_GREEN}install <package>${COLOR_NC}           Install a package (tries all managers)"
+    echo -e "  ${EMOJI_INSTALL} ${COLOR_GREEN}multiple <packages...>${COLOR_NC}      Install multiple packages at once"
     echo -e "  ${EMOJI_UPDATE} ${COLOR_GREEN}upgrade <package>${COLOR_NC}           Upgrade a package everywhere"
     echo -e "  ${EMOJI_UNINSTALL} ${COLOR_GREEN}uninstall <package>${COLOR_NC}        Uninstall a package (tries all managers)"
     echo -e "  ${EMOJI_SEARCH} ${COLOR_GREEN}search <package>${COLOR_NC}            Search for a package across all managers"
@@ -408,6 +409,84 @@ install_package() {
     done
 
     echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}Could not install '${package}' with any available package manager.${COLOR_NC}"
+}
+
+# Install multiple packages
+install_multiple_packages() {
+    _silent
+    local packages=("$@")
+    local total=${#packages[@]}
+    local successful=()
+    local failed=()
+    local results=()
+    
+    print_header
+    echo -e "${EMOJI_INSTALL} ${COLOR_LIGHT_CYAN}Installing ${COLOR_WHITE}${total}${COLOR_LIGHT_CYAN} packages: ${COLOR_WHITE}${packages[*]}${COLOR_LIGHT_CYAN}...${COLOR_NC}"
+    echo ""
+    print_divider
+    echo ""
+    
+    for package in "${packages[@]}"; do
+        echo -e "${EMOJI_INSTALL} ${COLOR_LIGHT_CYAN}Processing '${COLOR_WHITE}${package}${COLOR_LIGHT_CYAN}'...${COLOR_NC}"
+        local success=0
+        local used_manager=""
+        
+        for pm in "${AVAILABLE_PMS[@]}"; do
+            echo -e "  ${COLOR_BLUE}🔄 Trying with ${pm}...${COLOR_NC}"
+            if ${PM_COMMANDS[$pm]} ${PM_INSTALL[$pm]} ${package} >/dev/null 2>&1; then
+                echo -e "  ${EMOJI_SUCCESS} ${COLOR_LIGHT_GREEN}Package '${package}' installed successfully with ${pm}!${COLOR_NC}"
+                successful+=("${package}")
+                results+=("${package}\t${EMOJI_SUCCESS}\t${pm}")
+                used_manager="$pm"
+                success=1
+                break
+            else
+                echo -e "  ${COLOR_LIGHT_RED}✗ Failed with ${pm}${COLOR_NC}"
+            fi
+        done
+        
+        if [ $success -eq 0 ]; then
+            echo -e "  ${EMOJI_ERROR} ${COLOR_LIGHT_RED}Could not install '${package}' with any available package manager.${COLOR_NC}"
+            failed+=("${package}")
+            results+=("${package}\t${EMOJI_ERROR}\tNone")
+        fi
+        echo ""
+    done
+    
+    # Print summary
+    print_divider
+    echo ""
+    echo -e "${EMOJI_INFO} ${COLOR_WHITE}Installation Summary:${COLOR_NC}"
+    echo ""
+    
+    # Print results table
+    local header="${COLOR_LIGHT_BLUE}Package\tStatus\tManager${COLOR_NC}"
+    local rows=""
+    for result in "${results[@]}"; do
+        rows+="${result}\n"
+    done
+    print_table "$header" "$rows" ""
+    
+    echo ""
+    echo -e "${COLOR_LIGHT_GREEN}✅ Successfully installed: ${#successful[@]}/${total}${COLOR_NC}"
+    echo -e "${COLOR_LIGHT_RED}❌ Failed to install: ${#failed[@]}/${total}${COLOR_NC}"
+    
+    if [ ${#successful[@]} -gt 0 ]; then
+        echo -e "${COLOR_LIGHT_GREEN}Successful packages: ${successful[*]}${COLOR_NC}"
+    fi
+    
+    if [ ${#failed[@]} -gt 0 ]; then
+        echo -e "${COLOR_LIGHT_RED}Failed packages: ${failed[*]}${COLOR_NC}"
+    fi
+    
+    print_footer
+    
+    # Return success if at least one package was installed
+    if [ ${#successful[@]} -gt 0 ]; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Install a package with specific manager
@@ -1233,6 +1312,17 @@ case "$1" in
             install_package "$2"
         else
             install_package_with_manager "$2" "$3"
+        fi
+        ;;
+    multiple)
+        if [ -z "$2" ]; then
+            echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No packages specified.${COLOR_NC}"
+            echo -e "${COLOR_LIGHT_CYAN}Usage: kima multiple <package1> <package2> ... <packageN>${COLOR_NC}"
+            echo -e "${COLOR_LIGHT_CYAN}Example: kima multiple neofetch htop git${COLOR_NC}"
+            show_help
+        else
+            shift  # Remove 'multiple' from arguments
+            install_multiple_packages "$@"
         fi
         ;;
     search)
