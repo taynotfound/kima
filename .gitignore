@@ -1,0 +1,20 @@
+# Temporary files
+*.tmp
+/tmp/
+.tmp/
+
+# Backup files
+kima-backup-*.txt
+
+# Log files
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -44,6 +44,63 @@ EMOJI_CLEAN="🧹"
 EMOJI_UI="🖥️"
 EMOJI_EXIT="🚪"
 
+# --- Utility: Check GUI/TUI Dependencies ---
+check_gui_deps() {
+    local missing_gui=""
+    if ! command -v zenity &>/dev/null && ! command -v yad &>/dev/null; then
+        missing_gui="zenity or yad"
+    fi
+    echo "$missing_gui"
+}
+
+check_tui_deps() {
+    local missing_tui=""
+    if ! command -v fzf &>/dev/null; then
+        missing_tui="${missing_tui:+$missing_tui, }fzf"
+    fi
+    if ! command -v dialog &>/dev/null && ! command -v whiptail &>/dev/null; then
+        missing_tui="${missing_tui:+$missing_tui, }dialog or whiptail"
+    fi
+    echo "$missing_tui"
+}
+
+# --- Utility: Progress Bar ---
+show_progress() {
+    local current=$1
+    local total=$2
+    local message=$3
+    local percent=$((current * 100 / total))
+    local bar_length=50
+    local filled_length=$((percent * bar_length / 100))
+    
+    printf "\r%s [" "$message"
+    for ((i=0; i<filled_length; i++)); do printf "█"; done
+    for ((i=filled_length; i<bar_length; i++)); do printf "░"; done
+    printf "] %d%%" "$percent"
+    
+    if [ "$current" -eq "$total" ]; then
+        printf "\n"
+    fi
+}
+
+# --- Utility: Loading Spinner with Message ---
+show_loading_spinner() {
+    local pid=$1
+    local message=$2
+    local delay=0.1
+    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+    
+    printf "%s " "$message"
+    while kill -0 $pid 2>/dev/null; do
+        local char=${spinstr:$i:1}
+        printf "\r%s %s" "$message" "$char"
+        i=$(( (i+1) % ${#spinstr} ))
+        sleep $delay
+    done
+    printf "\r%s ✓\n" "$message"
+}
+
 # --- Utility: Print Table ---
 print_table() {
     local header="$1"
@@ -366,7 +423,10 @@ show_help() {
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}stats${COLOR_NC}                       Show system package statistics"
     echo -e "  ${EMOJI_INSTALL} ${COLOR_GREEN}copycmd <package>${COLOR_NC}          Copy install command to clipboard"
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}home <package>${COLOR_NC}              Show package homepage/URL"
-    echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}ui${COLOR_NC}                           Start interactive TUI mode"
+    echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}tui${COLOR_NC}                          Start enhanced TUI mode"
+    echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}gui${COLOR_NC}                          Start Material Design GUI mode"
+    echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}ui${COLOR_NC}                           Start interactive TUI mode (legacy)"
+    echo -e "  ${EMOJI_UNINSTALL} ${COLOR_GREEN}remove-multiple${COLOR_NC}           Remove multiple packages interactively"
     echo -e "  ${EMOJI_HELP} ${COLOR_GREEN}help${COLOR_NC}                        Show this help menu"
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}compare <package>${COLOR_NC}            Compare package availability and version across all managers"
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}suggest <term>${COLOR_NC}                Suggest similar package names"
@@ -399,13 +459,28 @@ install_package() {
     echo -e "${EMOJI_INSTALL} ${COLOR_LIGHT_CYAN}Attempting to install '${COLOR_WHITE}${package}${COLOR_LIGHT_CYAN}'...${COLOR_NC}"
     echo ""
 
+    local total_managers=${#AVAILABLE_PMS[@]}
+    local current=0
+
     for pm in "${AVAILABLE_PMS[@]}"; do
-        echo -e "  ${COLOR_BLUE}🔄 Trying with ${pm}...${COLOR_NC}"
-        ${PM_COMMANDS[$pm]} ${PM_INSTALL[$pm]} ${package}
-        if [ $? -eq 0 ]; then
+        current=$((current + 1))
+        echo -e "  ${COLOR_BLUE}[$current/$total_managers] Trying with ${pm}...${COLOR_NC}"
+        
+        # Run installation in background and show spinner
+        ${PM_COMMANDS[$pm]} ${PM_INSTALL[$pm]} ${package} >/dev/null 2>&1 &
+        local install_pid=$!
+        show_loading_spinner $install_pid "  ${COLOR_BLUE}Installing with ${pm}${COLOR_NC}"
+        wait $install_pid
+        local result=$?
+        
+        if [ $result -eq 0 ]; then
             echo -e "${EMOJI_SUCCESS} ${COLOR_LIGHT_GREEN}Package '${package}' installed successfully with ${pm}!${COLOR_NC}"
             return
+        else
+            echo -e "  ${COLOR_LIGHT_RED}✗ Failed with ${pm}${COLOR_NC}"
         fi
+        
+        show_progress "$current" "$total_managers" "Trying managers"
     done
 
     echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}Could not install '${package}' with any available package manager.${COLOR_NC}"
@@ -541,13 +616,28 @@ uninstall_package() {
     echo -e "${EMOJI_UNINSTALL} ${COLOR_LIGHT_CYAN}Attempting to uninstall '${package}'...${COLOR_NC}"
     echo ""
 
+    local total_managers=${#AVAILABLE_PMS[@]}
+    local current=0
+
     for pm in "${AVAILABLE_PMS[@]}"; do
-        echo -e "  ${COLOR_BLUE}Trying with ${pm}...${COLOR_NC}"
-        ${PM_COMMANDS[$pm]} ${PM_UNINSTALL[$pm]} ${package}
-        if [ $? -eq 0 ]; then
+        current=$((current + 1))
+        echo -e "  ${COLOR_BLUE}[$current/$total_managers] Trying with ${pm}...${COLOR_NC}"
+        
+        # Run uninstall in background and show spinner
+        ${PM_COMMANDS[$pm]} ${PM_UNINSTALL[$pm]} ${package} >/dev/null 2>&1 &
+        local uninstall_pid=$!
+        show_loading_spinner $uninstall_pid "  ${COLOR_BLUE}Uninstalling with ${pm}${COLOR_NC}"
+        wait $uninstall_pid
+        local result=$?
+        
+        if [ $result -eq 0 ]; then
             echo -e "${EMOJI_SUCCESS} ${COLOR_LIGHT_GREEN}Package '${package}' uninstalled successfully with ${pm}.${COLOR_NC}"
             return
+        else
+            echo -e "  ${COLOR_LIGHT_RED}✗ Failed with ${pm}${COLOR_NC}"
         fi
+        
+        show_progress "$current" "$total_managers" "Trying managers"
     done
 
     echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}Could not uninstall '${package}'. It may not be installed.${COLOR_NC}"
@@ -577,11 +667,25 @@ update_system() {
     _silent
     echo -e "${EMOJI_UPDATE} ${COLOR_LIGHT_CYAN}Updating system...${COLOR_NC}"
     echo ""
+    
+    local total_managers=${#AVAILABLE_PMS[@]}
+    local current=0
+    
     for pm in "${AVAILABLE_PMS[@]}"; do
+        current=$((current + 1))
         if [ -n "${PM_UPDATE[$pm]}" ]; then
-            echo -e "--- ${COLOR_YELLOW}Updating with ${pm} ${COLOR_YELLOW}---"
-            ${PM_COMMANDS[$pm]} ${PM_UPDATE[$pm]}
+            echo -e "--- ${COLOR_YELLOW}[$current/$total_managers] Updating with ${pm} ${COLOR_YELLOW}---"
+            
+            # Run update in background and show spinner
+            ${PM_COMMANDS[$pm]} ${PM_UPDATE[$pm]} >/dev/null 2>&1 &
+            local update_pid=$!
+            show_loading_spinner $update_pid "  ${COLOR_BLUE}Updating with ${pm}${COLOR_NC}"
+            wait $update_pid
+            echo -e "  ${EMOJI_SUCCESS} ${COLOR_GREEN}${pm} update complete${COLOR_NC}"
             echo ""
+            
+            # Show progress
+            show_progress "$current" "$total_managers" "Overall Progress"
         fi
     done
     echo -e "${EMOJI_SUCCESS} ${COLOR_LIGHT_GREEN}System update complete.${COLOR_NC}"
@@ -789,6 +893,653 @@ tui_mode() {
          esac
      done
  }
+
+# --- Enhanced TUI Mode using fzf and dialog ---
+enhanced_tui_mode() {
+    local missing_deps=$(check_tui_deps)
+    if [ -n "$missing_deps" ]; then
+        echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}Enhanced TUI mode requires: ${missing_deps}${COLOR_NC}"
+        echo -e "${COLOR_LIGHT_YELLOW}Falling back to legacy TUI mode...${COLOR_NC}"
+        tui_mode
+        return
+    fi
+
+    while true; do
+        local choice
+        if command -v dialog &>/dev/null; then
+            choice=$(dialog --clear --title "KIMA Package Manager" \
+                --menu "Choose an action:" 15 60 8 \
+                1 "Install Package" \
+                2 "Search Packages" \
+                3 "Uninstall Package" \
+                4 "Remove Multiple Packages" \
+                5 "Update System" \
+                6 "List Packages" \
+                7 "Package Info" \
+                8 "System Cleanup" \
+                0 "Exit" \
+                3>&1 1>&2 2>&3)
+        else
+            choice=$(whiptail --clear --title "KIMA Package Manager" \
+                --menu "Choose an action:" 15 60 8 \
+                1 "Install Package" \
+                2 "Search Packages" \
+                3 "Uninstall Package" \
+                4 "Remove Multiple Packages" \
+                5 "Update System" \
+                6 "List Packages" \
+                7 "Package Info" \
+                8 "System Cleanup" \
+                0 "Exit" \
+                3>&1 1>&2 2>&3)
+        fi
+
+        case $choice in
+            1) enhanced_tui_install ;;
+            2) enhanced_tui_search ;;
+            3) enhanced_tui_uninstall ;;
+            4) enhanced_tui_remove_multiple ;;
+            5) enhanced_tui_update ;;
+            6) enhanced_tui_list ;;
+            7) enhanced_tui_info ;;
+            8) enhanced_tui_cleanup ;;
+            0|"") break ;;
+            *) continue ;;
+        esac
+    done
+}
+
+# Enhanced TUI Install function
+enhanced_tui_install() {
+    local package
+    if command -v dialog &>/dev/null; then
+        package=$(dialog --inputbox "Enter package name to install:" 8 60 3>&1 1>&2 2>&3)
+    else
+        package=$(whiptail --inputbox "Enter package name to install:" 8 60 3>&1 1>&2 2>&3)
+    fi
+    
+    if [ -n "$package" ]; then
+        echo -e "${EMOJI_INSTALL} Installing $package..."
+        install_package "$package"
+        echo -e "\n${COLOR_LIGHT_GRAY}Press Enter to continue...${COLOR_NC}"
+        read
+    fi
+}
+
+# Enhanced TUI Search function
+enhanced_tui_search() {
+    local package
+    if command -v dialog &>/dev/null; then
+        package=$(dialog --inputbox "Enter package name to search:" 8 60 3>&1 1>&2 2>&3)
+    else
+        package=$(whiptail --inputbox "Enter package name to search:" 8 60 3>&1 1>&2 2>&3)
+    fi
+    
+    if [ -n "$package" ]; then
+        echo -e "${EMOJI_SEARCH} Searching for $package..."
+        search_package "$package"
+        echo -e "\n${COLOR_LIGHT_GRAY}Press Enter to continue...${COLOR_NC}"
+        read
+    fi
+}
+
+# Enhanced TUI Uninstall function
+enhanced_tui_uninstall() {
+    # Get list of installed packages for fzf selection
+    local packages_list=$(mktemp)
+    echo -e "${EMOJI_LIST} Gathering installed packages..."
+    
+    for pm in "${AVAILABLE_PMS[@]}"; do
+        if [ -n "${PM_LIST[$pm]}" ]; then
+            ${PM_COMMANDS_NO_SUDO[$pm]} ${PM_LIST[$pm]} 2>/dev/null | \
+            awk '{print $1 " (" pm ")"}' pm="$pm" >> "$packages_list"
+        fi
+    done
+    
+    if [ -s "$packages_list" ]; then
+        local selected
+        selected=$(fzf --prompt="Select package to uninstall: " < "$packages_list")
+        if [ -n "$selected" ]; then
+            local package=$(echo "$selected" | awk '{print $1}')
+            echo -e "${EMOJI_UNINSTALL} Uninstalling $package..."
+            uninstall_package "$package"
+            echo -e "\n${COLOR_LIGHT_GRAY}Press Enter to continue...${COLOR_NC}"
+            read
+        fi
+    else
+        echo -e "${EMOJI_ERROR} No installed packages found."
+        echo -e "\n${COLOR_LIGHT_GRAY}Press Enter to continue...${COLOR_NC}"
+        read
+    fi
+    
+    rm -f "$packages_list"
+}
+
+# Enhanced TUI Remove Multiple function
+enhanced_tui_remove_multiple() {
+    # Get list of installed packages for fzf multi-selection
+    local packages_list=$(mktemp)
+    echo -e "${EMOJI_LIST} Gathering installed packages..."
+    
+    for pm in "${AVAILABLE_PMS[@]}"; do
+        if [ -n "${PM_LIST[$pm]}" ]; then
+            ${PM_COMMANDS_NO_SUDO[$pm]} ${PM_LIST[$pm]} 2>/dev/null | \
+            awk '{print $1 " (" pm ")"}' pm="$pm" >> "$packages_list"
+        fi
+    done
+    
+    if [ -s "$packages_list" ]; then
+        local selected_packages
+        selected_packages=$(fzf --multi --prompt="Select packages to remove (Tab to select, Enter to confirm): " < "$packages_list")
+        
+        if [ -n "$selected_packages" ]; then
+            local package_count=$(echo "$selected_packages" | wc -l)
+            local packages=$(echo "$selected_packages" | awk '{print $1}' | tr '\n' ' ')
+            
+            # Confirmation dialog
+            local confirm
+            if command -v dialog &>/dev/null; then
+                if dialog --yesno "Remove $package_count packages?\n\n$packages" 10 60; then
+                    confirm="yes"
+                fi
+            else
+                if whiptail --yesno "Remove $package_count packages?\n\n$packages" 10 60; then
+                    confirm="yes"
+                fi
+            fi
+            
+            if [ "$confirm" = "yes" ]; then
+                echo -e "${EMOJI_UNINSTALL} Removing selected packages..."
+                echo "$selected_packages" | while read -r line; do
+                    local package=$(echo "$line" | awk '{print $1}')
+                    if [ -n "$package" ]; then
+                        echo -e "\n${COLOR_LIGHT_CYAN}Removing $package...${COLOR_NC}"
+                        uninstall_package "$package"
+                    fi
+                done
+                echo -e "\n${EMOJI_SUCCESS} Multiple package removal complete!"
+            fi
+        fi
+        echo -e "\n${COLOR_LIGHT_GRAY}Press Enter to continue...${COLOR_NC}"
+        read
+    else
+        echo -e "${EMOJI_ERROR} No installed packages found."
+        echo -e "\n${COLOR_LIGHT_GRAY}Press Enter to continue...${COLOR_NC}"
+        read
+    fi
+    
+    rm -f "$packages_list"
+}
+
+# Enhanced TUI functions for other operations
+enhanced_tui_update() {
+    echo -e "${EMOJI_UPDATE} Starting system update..."
+    update_system
+    echo -e "\n${COLOR_LIGHT_GRAY}Press Enter to continue...${COLOR_NC}"
+    read
+}
+
+enhanced_tui_list() {
+    echo -e "${EMOJI_LIST} Listing installed packages..."
+    list_packages | head -50
+    echo -e "\n${COLOR_LIGHT_GRAY}Press Enter to continue...${COLOR_NC}"
+    read
+}
+
+enhanced_tui_info() {
+    local package
+    if command -v dialog &>/dev/null; then
+        package=$(dialog --inputbox "Enter package name for info:" 8 60 3>&1 1>&2 2>&3)
+    else
+        package=$(whiptail --inputbox "Enter package name for info:" 8 60 3>&1 1>&2 2>&3)
+    fi
+    
+    if [ -n "$package" ]; then
+        echo -e "${EMOJI_INFO} Getting info for $package..."
+        show_package_info "$package"
+        echo -e "\n${COLOR_LIGHT_GRAY}Press Enter to continue...${COLOR_NC}"
+        read
+    fi
+}
+
+enhanced_tui_cleanup() {
+    echo -e "${EMOJI_CLEAN} Starting system cleanup..."
+    cleanup_system
+    echo -e "\n${COLOR_LIGHT_GRAY}Press Enter to continue...${COLOR_NC}"
+    read
+}
+
+# --- GUI Mode using Zenity/YAD ---
+gui_mode() {
+    local missing_deps=$(check_gui_deps)
+    if [ -n "$missing_deps" ]; then
+        echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}GUI mode requires: ${missing_deps}${COLOR_NC}"
+        echo -e "${COLOR_LIGHT_YELLOW}Install with: sudo apt install zenity yad${COLOR_NC}"
+        echo -e "${COLOR_LIGHT_YELLOW}Falling back to enhanced TUI mode...${COLOR_NC}"
+        enhanced_tui_mode
+        return
+    fi
+
+    # Prefer YAD over Zenity for better Material Design appearance
+    if command -v yad &>/dev/null; then
+        gui_mode_yad
+    else
+        gui_mode_zenity
+    fi
+}
+
+# GUI Mode using YAD (preferred for Material Design)
+gui_mode_yad() {
+    while true; do
+        local choice=$(yad --form \
+            --title="KIMA Package Manager" \
+            --text="<b>Welcome to KIMA</b>\nUnified Linux Package Manager" \
+            --image="software-properties" \
+            --center \
+            --width=400 \
+            --height=500 \
+            --button="Install Package:1" \
+            --button="Search Packages:2" \
+            --button="Uninstall Package:3" \
+            --button="Remove Multiple:4" \
+            --button="Update System:5" \
+            --button="List Packages:6" \
+            --button="Package Info:7" \
+            --button="System Cleanup:8" \
+            --button="Exit:0" \
+            --field="" "" \
+            2>/dev/null)
+        
+        local exit_code=$?
+        case $exit_code in
+            1) gui_install_yad ;;
+            2) gui_search_yad ;;
+            3) gui_uninstall_yad ;;
+            4) gui_remove_multiple_yad ;;
+            5) gui_update_yad ;;
+            6) gui_list_yad ;;
+            7) gui_info_yad ;;
+            8) gui_cleanup_yad ;;
+            *) break ;;
+        esac
+    done
+}
+
+# GUI Mode using Zenity (fallback)
+gui_mode_zenity() {
+    while true; do
+        local choice=$(zenity --list \
+            --title="KIMA Package Manager" \
+            --text="Choose an action:" \
+            --column="Action" \
+            --width=400 \
+            --height=500 \
+            "Install Package" \
+            "Search Packages" \
+            "Uninstall Package" \
+            "Remove Multiple Packages" \
+            "Update System" \
+            "List Packages" \
+            "Package Info" \
+            "System Cleanup" \
+            2>/dev/null)
+        
+        case "$choice" in
+            "Install Package") gui_install_zenity ;;
+            "Search Packages") gui_search_zenity ;;
+            "Uninstall Package") gui_uninstall_zenity ;;
+            "Remove Multiple Packages") gui_remove_multiple_zenity ;;
+            "Update System") gui_update_zenity ;;
+            "List Packages") gui_list_zenity ;;
+            "Package Info") gui_info_zenity ;;
+            "System Cleanup") gui_cleanup_zenity ;;
+            *) break ;;
+        esac
+    done
+}
+
+# GUI Install function using YAD
+gui_install_yad() {
+    local package=$(yad --entry \
+        --title="Install Package" \
+        --text="Enter package name to install:" \
+        --width=400 \
+        --center \
+        2>/dev/null)
+    
+    if [ -n "$package" ]; then
+        (install_package "$package" 2>&1) | yad --text-info \
+            --title="Installing $package" \
+            --width=600 \
+            --height=400 \
+            --button="OK:0" \
+            --center
+    fi
+}
+
+# GUI Search function using YAD
+gui_search_yad() {
+    local package=$(yad --entry \
+        --title="Search Packages" \
+        --text="Enter package name to search:" \
+        --width=400 \
+        --center \
+        2>/dev/null)
+    
+    if [ -n "$package" ]; then
+        (search_package "$package" 2>&1) | yad --text-info \
+            --title="Search Results for $package" \
+            --width=800 \
+            --height=600 \
+            --button="OK:0" \
+            --center
+    fi
+}
+
+# GUI Uninstall function using YAD
+gui_uninstall_yad() {
+    local packages_list=$(mktemp)
+    
+    # Show progress while gathering packages
+    (
+        echo "# Gathering installed packages..."
+        for pm in "${AVAILABLE_PMS[@]}"; do
+            if [ -n "${PM_LIST[$pm]}" ]; then
+                ${PM_COMMANDS_NO_SUDO[$pm]} ${PM_LIST[$pm]} 2>/dev/null | \
+                awk '{print $1 "|" pm}' pm="$pm" >> "$packages_list"
+            fi
+        done
+        echo "100"
+    ) | yad --progress \
+        --title="Loading Packages" \
+        --text="Gathering installed packages..." \
+        --width=400 \
+        --center \
+        --auto-close
+    
+    if [ -s "$packages_list" ]; then
+        local selected=$(yad --list \
+            --title="Uninstall Package" \
+            --text="Select package to uninstall:" \
+            --column="Package" \
+            --column="Manager" \
+            --separator="|" \
+            --width=600 \
+            --height=400 \
+            --center \
+            $(cat "$packages_list") \
+            2>/dev/null)
+        
+        if [ -n "$selected" ]; then
+            local package=$(echo "$selected" | cut -d'|' -f1)
+            if yad --question \
+                --title="Confirm Uninstall" \
+                --text="Uninstall package: $package?" \
+                --width=300 \
+                --center; then
+                (uninstall_package "$package" 2>&1) | yad --text-info \
+                    --title="Uninstalling $package" \
+                    --width=600 \
+                    --height=400 \
+                    --button="OK:0" \
+                    --center
+            fi
+        fi
+    else
+        yad --info \
+            --title="No Packages" \
+            --text="No installed packages found." \
+            --width=300 \
+            --center
+    fi
+    
+    rm -f "$packages_list"
+}
+
+# GUI Remove Multiple function using YAD
+gui_remove_multiple_yad() {
+    local packages_list=$(mktemp)
+    
+    # Show progress while gathering packages
+    (
+        echo "# Gathering installed packages..."
+        for pm in "${AVAILABLE_PMS[@]}"; do
+            if [ -n "${PM_LIST[$pm]}" ]; then
+                ${PM_COMMANDS_NO_SUDO[$pm]} ${PM_LIST[$pm]} 2>/dev/null | \
+                awk '{print "FALSE|" $1 "|" pm}' pm="$pm" >> "$packages_list"
+            fi
+        done
+        echo "100"
+    ) | yad --progress \
+        --title="Loading Packages" \
+        --text="Gathering installed packages..." \
+        --width=400 \
+        --center \
+        --auto-close
+    
+    if [ -s "$packages_list" ]; then
+        local selected=$(yad --list \
+            --title="Remove Multiple Packages" \
+            --text="Select packages to remove (check boxes):" \
+            --checklist \
+            --column="Remove" \
+            --column="Package" \
+            --column="Manager" \
+            --separator="|" \
+            --width=700 \
+            --height=500 \
+            --center \
+            $(cat "$packages_list") \
+            2>/dev/null)
+        
+        if [ -n "$selected" ]; then
+            local packages_to_remove=$(echo "$selected" | cut -d'|' -f2)
+            local package_count=$(echo "$packages_to_remove" | wc -l)
+            
+            if yad --question \
+                --title="Confirm Multiple Removal" \
+                --text="Remove $package_count packages?\n\n$packages_to_remove" \
+                --width=400 \
+                --center; then
+                
+                (
+                    echo "# Removing selected packages..."
+                    local i=0
+                    echo "$packages_to_remove" | while read -r package; do
+                        if [ -n "$package" ]; then
+                            echo "# Removing $package..."
+                            uninstall_package "$package"
+                            i=$((i + 1))
+                            local percent=$((i * 100 / package_count))
+                            echo "$percent"
+                        fi
+                    done
+                    echo "100"
+                ) | yad --progress \
+                    --title="Removing Packages" \
+                    --text="Removing selected packages..." \
+                    --width=500 \
+                    --center \
+                    --auto-close
+            fi
+        fi
+    else
+        yad --info \
+            --title="No Packages" \
+            --text="No installed packages found." \
+            --width=300 \
+            --center
+    fi
+    
+    rm -f "$packages_list"
+}
+
+# Other YAD GUI functions
+gui_update_yad() {
+    (update_system 2>&1) | yad --text-info \
+        --title="System Update" \
+        --width=700 \
+        --height=500 \
+        --button="OK:0" \
+        --center
+}
+
+gui_list_yad() {
+    (list_packages 2>&1) | yad --text-info \
+        --title="Installed Packages" \
+        --width=800 \
+        --height=600 \
+        --button="OK:0" \
+        --center
+}
+
+gui_info_yad() {
+    local package=$(yad --entry \
+        --title="Package Information" \
+        --text="Enter package name for info:" \
+        --width=400 \
+        --center \
+        2>/dev/null)
+    
+    if [ -n "$package" ]; then
+        (show_package_info "$package" 2>&1) | yad --text-info \
+            --title="Information for $package" \
+            --width=700 \
+            --height=500 \
+            --button="OK:0" \
+            --center
+    fi
+}
+
+gui_cleanup_yad() {
+    if yad --question \
+        --title="System Cleanup" \
+        --text="Start system cleanup?" \
+        --width=300 \
+        --center; then
+        (cleanup_system 2>&1) | yad --text-info \
+            --title="System Cleanup" \
+            --width=700 \
+            --height=500 \
+            --button="OK:0" \
+            --center
+    fi
+}
+
+# Zenity equivalents (simplified versions)
+gui_install_zenity() {
+    local package=$(zenity --entry --title="Install Package" --text="Enter package name:")
+    if [ -n "$package" ]; then
+        install_package "$package" | zenity --text-info --title="Installing $package" --width=600 --height=400
+    fi
+}
+
+gui_search_zenity() {
+    local package=$(zenity --entry --title="Search Packages" --text="Enter package name:")
+    if [ -n "$package" ]; then
+        search_package "$package" | zenity --text-info --title="Search Results" --width=700 --height=500
+    fi
+}
+
+gui_uninstall_zenity() {
+    local package=$(zenity --entry --title="Uninstall Package" --text="Enter package name:")
+    if [ -n "$package" ]; then
+        if zenity --question --text="Uninstall package: $package?"; then
+            uninstall_package "$package" | zenity --text-info --title="Uninstalling $package" --width=600 --height=400
+        fi
+    fi
+}
+
+gui_remove_multiple_zenity() {
+    zenity --info --text="Multiple removal feature requires YAD for best experience.\nPlease install YAD or use the TUI mode for this feature."
+}
+
+gui_update_zenity() {
+    update_system | zenity --text-info --title="System Update" --width=700 --height=500
+}
+
+gui_list_zenity() {
+    list_packages | zenity --text-info --title="Installed Packages" --width=700 --height=500
+}
+
+gui_info_zenity() {
+    local package=$(zenity --entry --title="Package Info" --text="Enter package name:")
+    if [ -n "$package" ]; then
+        show_package_info "$package" | zenity --text-info --title="Package Info" --width=600 --height=400
+    fi
+}
+
+gui_cleanup_zenity() {
+    if zenity --question --text="Start system cleanup?"; then
+        cleanup_system | zenity --text-info --title="System Cleanup" --width=600 --height=400
+    fi
+}
+
+# --- Remove Multiple Command Line Function ---
+remove_multiple_packages() {
+    echo -e "${EMOJI_UNINSTALL} ${COLOR_LIGHT_CYAN}Interactive Multiple Package Removal${COLOR_NC}\n"
+    
+    # Check for required dependencies
+    if ! command -v fzf &>/dev/null; then
+        echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}This feature requires 'fzf' for package selection.${COLOR_NC}"
+        echo -e "${COLOR_LIGHT_YELLOW}Install with: sudo apt install fzf${COLOR_NC}"
+        return 1
+    fi
+    
+    local packages_list=$(mktemp)
+    echo -e "${EMOJI_LIST} Gathering installed packages..."
+    
+    # Gather packages from all managers
+    for pm in "${AVAILABLE_PMS[@]}"; do
+        if [ -n "${PM_LIST[$pm]}" ]; then
+            echo -e "  ${COLOR_BLUE}Getting packages from ${pm}...${COLOR_NC}"
+            ${PM_COMMANDS_NO_SUDO[$pm]} ${PM_LIST[$pm]} 2>/dev/null | \
+            awk '{print $1 " (" pm ")"}' pm="$pm" >> "$packages_list"
+        fi
+    done
+    
+    if [ ! -s "$packages_list" ]; then
+        echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No installed packages found.${COLOR_NC}"
+        rm -f "$packages_list"
+        return 1
+    fi
+    
+    echo -e "\n${COLOR_LIGHT_CYAN}Select packages to remove (use Tab to select multiple, Enter to confirm):${COLOR_NC}"
+    local selected_packages
+    selected_packages=$(fzf --multi --height=60% --prompt="Select packages: " < "$packages_list")
+    
+    if [ -z "$selected_packages" ]; then
+        echo -e "${COLOR_LIGHT_GRAY}No packages selected. Operation cancelled.${COLOR_NC}"
+        rm -f "$packages_list"
+        return 0
+    fi
+    
+    local package_count=$(echo "$selected_packages" | wc -l)
+    echo -e "\n${COLOR_YELLOW}You selected $package_count packages for removal:${COLOR_NC}"
+    echo "$selected_packages"
+    
+    echo -e "\n${COLOR_LIGHT_RED}Are you sure you want to remove these packages? (y/N):${COLOR_NC}"
+    read -r confirm
+    
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        echo -e "\n${EMOJI_UNINSTALL} ${COLOR_LIGHT_CYAN}Removing selected packages...${COLOR_NC}"
+        local i=0
+        echo "$selected_packages" | while read -r line; do
+            local package=$(echo "$line" | awk '{print $1}')
+            if [ -n "$package" ]; then
+                i=$((i + 1))
+                echo -e "\n${COLOR_LIGHT_PURPLE}[$i/$package_count] Removing $package...${COLOR_NC}"
+                uninstall_package "$package"
+                show_progress "$i" "$package_count" "Progress"
+            fi
+        done
+        echo -e "\n${EMOJI_SUCCESS} ${COLOR_LIGHT_GREEN}Multiple package removal complete!${COLOR_NC}"
+    else
+        echo -e "${COLOR_LIGHT_GRAY}Operation cancelled.${COLOR_NC}"
+    fi
+    
+    rm -f "$packages_list"
+}
 
 
 # Upgrade a single package across all managers
@@ -1382,6 +2133,15 @@ case "$1" in
         ;;
     ui)
         tui_mode
+        ;;
+    tui)
+        enhanced_tui_mode
+        ;;
+    gui)
+        gui_mode
+        ;;
+    remove-multiple)
+        remove_multiple_packages
         ;;
     help)
         show_help
