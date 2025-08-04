@@ -1,38 +1,10 @@
 #!/bin/bash
 
-# KIMA - Unified Linux Package Manager
+# KIMA - Kacka in meinem Arsch
 # A unified package manager script for Linux.
 #
 # This script provides a single interface to manage packages across
 # dnf, snap, apt, rpm, yay, pacman, and flatpak.
-
-# Shell compatibility check
-if [ -z "$BASH_VERSION" ]; then
-    echo "Error: This script requires Bash. Please run with: bash $0 $*"
-    exit 1
-fi
-
-# Minimum Bash version check (4.0+)
-if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
-    echo "Error: This script requires Bash 4.0 or newer. Current version: $BASH_VERSION"
-    exit 1
-fi
-
-# --- Version Information ---
-KIMA_VERSION="2.0.0"
-KIMA_DATE="2024-01-01"
-
-# Show version information
-show_version() {
-    print_header
-    echo -e "${EMOJI_INFO} ${COLOR_LIGHT_CYAN}KIMA Version Information${COLOR_NC}\n"
-    echo -e "${COLOR_YELLOW}Version:${COLOR_NC} ${COLOR_WHITE}${KIMA_VERSION}${COLOR_NC}"
-    echo -e "${COLOR_YELLOW}Date:${COLOR_NC} ${COLOR_WHITE}${KIMA_DATE}${COLOR_NC}"
-    echo -e "${COLOR_YELLOW}Author:${COLOR_NC} ${COLOR_WHITE}taynotfound${COLOR_NC}"
-    echo -e "${COLOR_YELLOW}GitHub:${COLOR_NC} ${COLOR_WHITE}https://github.com/taynotfound/kima${COLOR_NC}"
-    echo -e "${COLOR_YELLOW}License:${COLOR_NC} ${COLOR_WHITE}MIT${COLOR_NC}"
-    print_footer
-}
 
 # --- Colors and Styles ---
 COLOR_NC='\033[0m'
@@ -394,10 +366,7 @@ show_help() {
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}stats${COLOR_NC}                       Show system package statistics"
     echo -e "  ${EMOJI_INSTALL} ${COLOR_GREEN}copycmd <package>${COLOR_NC}          Copy install command to clipboard"
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}home <package>${COLOR_NC}              Show package homepage/URL"
-    echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}tui${COLOR_NC}                          Start enhanced TUI mode"
-    echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}gui${COLOR_NC}                          Start Material Design GUI mode"
-    echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}ui${COLOR_NC}                           Start interactive TUI mode (legacy)"
-    echo -e "  ${EMOJI_UNINSTALL} ${COLOR_GREEN}remove-multiple${COLOR_NC}           Remove multiple packages interactively"
+    echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}ui${COLOR_NC}                           Start interactive TUI mode"
     echo -e "  ${EMOJI_HELP} ${COLOR_GREEN}help${COLOR_NC}                        Show this help menu"
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}compare <package>${COLOR_NC}            Compare package availability and version across all managers"
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}suggest <term>${COLOR_NC}                Suggest similar package names"
@@ -821,72 +790,6 @@ tui_mode() {
      done
  }
 
-
-# --- Remove Multiple Command Line Function ---
-remove_multiple_packages() {
-    echo -e "${EMOJI_UNINSTALL} ${COLOR_LIGHT_CYAN}Interactive Multiple Package Removal${COLOR_NC}\n"
-    
-    # Check for required dependencies
-    if ! command -v fzf &>/dev/null; then
-        echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}This feature requires 'fzf' for package selection.${COLOR_NC}"
-        echo -e "${COLOR_LIGHT_YELLOW}Install with: sudo apt install fzf${COLOR_NC}"
-        return 1
-    fi
-    
-    local packages_list=$(mktemp)
-    echo -e "${EMOJI_LIST} Gathering installed packages..."
-    
-    # Gather packages from all managers
-    for pm in "${AVAILABLE_PMS[@]}"; do
-        if [ -n "${PM_LIST[$pm]}" ]; then
-            echo -e "  ${COLOR_BLUE}Getting packages from ${pm}...${COLOR_NC}"
-            ${PM_COMMANDS_NO_SUDO[$pm]} ${PM_LIST[$pm]} 2>/dev/null | \
-            awk '{print $1 " (" pm ")"}' pm="$pm" >> "$packages_list"
-        fi
-    done
-    
-    if [ ! -s "$packages_list" ]; then
-        echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}No installed packages found.${COLOR_NC}"
-        rm -f "$packages_list"
-        return 1
-    fi
-    
-    echo -e "\n${COLOR_LIGHT_CYAN}Select packages to remove (use Tab to select multiple, Enter to confirm):${COLOR_NC}"
-    local selected_packages
-    selected_packages=$(fzf --multi --height=60% --prompt="Select packages: " < "$packages_list")
-    
-    if [ -z "$selected_packages" ]; then
-        echo -e "${COLOR_LIGHT_GRAY}No packages selected. Operation cancelled.${COLOR_NC}"
-        rm -f "$packages_list"
-        return 0
-    fi
-    
-    local package_count=$(echo "$selected_packages" | wc -l)
-    echo -e "\n${COLOR_YELLOW}You selected $package_count packages for removal:${COLOR_NC}"
-    echo "$selected_packages"
-    
-    echo -e "\n${COLOR_LIGHT_RED}Are you sure you want to remove these packages? (y/N):${COLOR_NC}"
-    read -r confirm
-    
-    if [[ "$confirm" =~ ^[Yy]$ ]]; then
-        echo -e "\n${EMOJI_UNINSTALL} ${COLOR_LIGHT_CYAN}Removing selected packages...${COLOR_NC}"
-        local i=0
-        echo "$selected_packages" | while read -r line; do
-            local package=$(echo "$line" | awk '{print $1}')
-            if [ -n "$package" ]; then
-                i=$((i + 1))
-                echo -e "\n${COLOR_LIGHT_PURPLE}[$i/$package_count] Removing $package...${COLOR_NC}"
-                uninstall_package "$package"
-                show_progress "$i" "$package_count" "Progress"
-            fi
-        done
-        echo -e "\n${EMOJI_SUCCESS} ${COLOR_LIGHT_GREEN}Multiple package removal complete!${COLOR_NC}"
-    else
-        echo -e "${COLOR_LIGHT_GRAY}Operation cancelled.${COLOR_NC}"
-    fi
-    
-    rm -f "$packages_list"
-}
 
 # Upgrade a single package across all managers
 upgrade_package() {
@@ -1480,15 +1383,6 @@ case "$1" in
     ui)
         tui_mode
         ;;
-    tui)
-        enhanced_tui_mode
-        ;;
-    gui)
-        gui_mode
-        ;;
-    remove-multiple)
-        remove_multiple_packages
-        ;;
     help)
         show_help
         ;;
@@ -1597,9 +1491,6 @@ case "$1" in
         ;;
     self-check)
         self_check
-        ;;
-    version|--version|-v)
-        show_version
         ;;
     *)
         echo -e "${EMOJI_ERROR} ${COLOR_LIGHT_RED}Invalid command: $1${COLOR_NC}"
