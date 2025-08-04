@@ -367,6 +367,7 @@ show_help() {
     echo -e "  ${EMOJI_INSTALL} ${COLOR_GREEN}copycmd <package>${COLOR_NC}          Copy install command to clipboard"
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}home <package>${COLOR_NC}              Show package homepage/URL"
     echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}ui${COLOR_NC}                           Start interactive TUI mode"
+    echo -e "  ${EMOJI_UI}  ${COLOR_GREEN}gui${COLOR_NC}                          Start graphical user interface"
     echo -e "  ${EMOJI_HELP} ${COLOR_GREEN}help${COLOR_NC}                        Show this help menu"
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}compare <package>${COLOR_NC}            Compare package availability and version across all managers"
     echo -e "  ${EMOJI_INFO} ${COLOR_GREEN}suggest <term>${COLOR_NC}                Suggest similar package names"
@@ -1382,6 +1383,9 @@ case "$1" in
         ;;
     ui)
         tui_mode
+        ;;
+    gui)
+        python3 "$(dirname "$0")/kima_gui.py"
         ;;
     help)
         show_help
